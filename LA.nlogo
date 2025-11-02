@@ -15,12 +15,13 @@ globals [
   house-raster street-raster sea-raster
   house-table street-table sea-table
   data-loaded?
-  social-radius           ;; radius of infection
-  contagion-matrix        ;; Matrix of emotional contagion coefficients
+  social-radius           ; Radius of infection
+  contagion-matrix        ; Emotional Contagion Coefficient Matrix
   tracked-turtle
-  fire-centers     ;; Record initial fire patch list
-  fire-radius      ;; Current fire radius
+  fire-centers     ; Record Initial Ignition Source Patch List
+  fire-radius      ; Current fire radius
   fire-speed-patch-per-tick
+  escaped-count
 ]
 
 patches-own [
@@ -33,24 +34,22 @@ evacuees-own [
   evac-path
   path-index
   waiting?
-  income-level        ;; 0 = low, 0.5 = mid, 1 = high
-  emotion-level       ;; continuous: "p"
-  behavior            ;; state: "calm", "anxious", "panic"
-  emotion-state       ;; duplicate of behavior for clarity
+  income-level        ; 0 = low, 0.5 = mid, 1 = high
+  emotion-level       ; continuous: "p"
+  behavior            ; state: "calm", "anxious", "panic"
+  emotion-state       ; duplicate of behavior for clarity
   social-influence
   evac-speed
   distance-to-move
 
-  route-switch-count  ;; path recalculations
-  stuck-duration      ;; ticks frozen
-  exposure-flag       ;; 1 if touched fire
+  route-switch-count  ; path recalculations
+  stuck-duration      ; ticks frozen
+  exposure-flag       ; 1 if touched fire
 ]
 
 
 
-;;;========================
-;;; Initialization and Setup
-;;;========================
+; Initialization
 
 to load-data
   set house-raster gis:load-dataset "data/house_sub.asc"
@@ -88,6 +87,9 @@ to setup
 
   setup-evacuees
   setup-responders
+  keep-sea-blue
+
+  set escaped-count 0
 
   if tracked-income-group = "low"  [ set tracked-turtle one-of evacuees with [income-level = 0] ]
   if tracked-income-group = "mid"  [ set tracked-turtle one-of evacuees with [income-level = 0.5] ]
@@ -99,13 +101,11 @@ end
 
 
 to setup-contagion-matrix
-  ;; contagion-matrix[i][j]: contagion strength of neighbor's emotion i to self's emotion j
-  ;; Mood Index: 0=calm,1=panic,2=anxious
   set contagion-matrix
   (list
-    (list 0.1  0.2  0.3)   ;; neighbor=calm
-    (list 0.4  0.1  0.5)   ;; neighbor=panic
-    (list 0.2  0.3  0.1)   ;; neighbor=anxious
+    (list 0.1  0.2  0.3)   ; neighbor=calm
+    (list 0.4  0.1  0.5)   ; neighbor=panic
+    (list 0.2  0.3  0.1)   ; neighbor=anxious
   )
 end
 
@@ -139,19 +139,19 @@ end
 
 to setup-fires
   ifelse random-fire? [
-    ;; Random fire centers (as before)
+    ; Random fire centers (as before)
     set fire-centers n-of random-fire-count patches with [ not (pcolor = blue) ]
   ] [
-    ;; Fire starts from house patches with value = 3
+    ; Fire starts from house patches with value = 3
     set fire-centers patches with [
       table:get house-table (list pxcor pycor) = 3 and not (pcolor = blue)
     ]
   ]
 
-  ;; Initial fire radius
+  ; Initial fire radius
   set fire-radius 10
 
-  ;; Mark burning patches
+  ; Mark burning patches
   ask patches [
     if any? fire-centers with [ distance myself <= fire-radius ] [
       set is-fire?    true
@@ -164,7 +164,6 @@ end
 
 to spread-fire
   set fire-radius fire-radius + fire-speed-patch-per-tick
-  ;; Mark newly burned patches
   ask patches with [ not is-fire? ] [
     if any? fire-centers with [ distance myself <= fire-radius ] [
       set is-fire?    true
@@ -174,9 +173,15 @@ to spread-fire
   ]
 end
 
-;;;========================
-;;; Generate Agents
-;;;========================
+to keep-sea-blue
+  ask patches with [ table:get sea-table (list pxcor pycor) = 2 ] [
+    set is-fire? false
+    set pcolor blue
+    set travel-cost 999
+  ]
+end
+
+; Generate Agents
 
 to setup-evacuees
   let low    patches with [table:get house-table (list pxcor pycor) = 79018]
@@ -208,11 +213,10 @@ to setup-evacuees
       set behavior "calm"
       set social-influence 0
 
-      ;; Path planning + route-switch tracking
       let target-road min-one-of roads [ distance myself ]
       let destination one-of exits
       set evac-path sentence (list target-road) (a-star-path target-road destination)
-      set route-switch-count 1  ;; first path
+      set route-switch-count 1
 
       ;; Emotion model
       compute-emotion
@@ -271,14 +275,13 @@ end
 
 
 to move-responder
-  ;; Advance by rescue-speed each tick
   set distance-to-move distance-to-move + rescue-speed
 
   ;; Continue moving while there's distance left and path remains
   while [is-list? destination-path and path-index < length destination-path and distance-to-move >= 1] [
     let next-patch item path-index destination-path
 
-    ;; Abort if next patch is on fire
+    ;; if next patch is on fire
     if [is-fire?] of next-patch [
       if mode = "rescue" [ choose-new-destination ]
       stop
@@ -329,12 +332,12 @@ end
 
 
 
-;;;========================
-;;; primary cycle
-;;;========================
+; Main Loop
 
 to go
+  keep-sea-blue
   spread-fire
+  keep-sea-blue
   if ticks = 0 [ export-view (word "view-tick-0.png") ]
   if ticks = 100 [ export-view (word "view-tick-100.png") ]
   if ticks = 300 [ export-view (word "view-tick-300.png") ]
@@ -345,7 +348,6 @@ to go
   if ticks = 1500 [ export-view (word "view-tick-1500.png") ]
   if ticks = 1700 [ export-view (word "view-tick-1700.png") ]
   if ticks = 2000 [ export-view (word "view-tick-2000.png") ]
-  ; Continue simulation
   ask evacuees [
     compute-emotion
     update-behavior
@@ -386,7 +388,8 @@ to move-evacuee
     set distance-to-move distance-to-move - 1
 
     ;; Check for exit
-    if is-exit? [
+    if [is-exit?] of patch-here [
+      set escaped-count escaped-count + 1
       die
     ]
   ]
@@ -394,9 +397,7 @@ end
 
 
 
-;;;========================
-;;; A* Path search
-;;;========================
+; A*
 to-report a-star-path [ src dst ]
   let open-list (list src)
   let closed-list []
@@ -436,9 +437,7 @@ end
 
 
 
-;;;========================
-;;; Social Influence Calculator
-;;;========================
+; Neighborhood Effect
 
 to compute-social-influence
   set social-influence 0
@@ -446,16 +445,15 @@ to compute-social-influence
   if any? close-turtles [
     let sum-w 0
     ask close-turtles [
+      ;; Eq.2
       let d distance myself
       let dist-weight (1 / (1 + d))
       let nb-behavior behavior
-      ;; Fetch your own behavior (with reporter blocks)
       let self-behavior [behavior] of myself
-      ;; check contagion coefficient in contagion-matrix
+      ;; Eq.3
       let i position nb-behavior ["calm" "panic" "anxious"]
       let j position self-behavior ["calm" "panic" "anxious"]
       let emo-weight item j (item i contagion-matrix)
-      ;; portfolio weighting
       let w dist-weight * emo-weight
       set sum-w sum-w + w
       set social-influence social-influence + (emotion-level * w)
@@ -468,11 +466,10 @@ end
 
 
 
-;;;========================
-;;; Sentiment calculation: introducing social influence
-;;;========================
+; Emotion Computing
 
 to compute-emotion
+  ;; Input Factors
   let exit-p min-one-of patches with [is-exit?] [distance myself]
   let road-p min-one-of patches with [pcolor = gray + 2] [distance myself]
   let fire-p min-one-of patches with [is-fire?] [distance myself]
@@ -480,21 +477,20 @@ to compute-emotion
   let norm-road 1 - (distance road-p / 200)
   let norm-fire 1 - (distance fire-p / 200)
 
+  ;; 	Social Contagion
   compute-social-influence
 
-  ;; linear combination + tanh activation
+  ;; Eq.5
   let raw
   ((-0.4  * income-level)
     + (-0.6  * norm-exit)
     + (-0.5  * norm-road)
     + (1   * norm-fire)
-    + (0.7   * social-influence))  ;; social-influence adjustable weights
+    + (0.7   * social-influence))
   set emotion-level tanh raw
 end
 
-;;;========================
-;;; Behavioral decision-making
-;;;========================
+; decision-making
 
 to update-behavior
   let p emotion-level
@@ -535,19 +531,16 @@ to act-based-on-behavior
 end
 
 to anxious-move
-  ;; Choose random 4-connected neighbor that is not on fire or blocked
   let choices neighbors4 with [travel-cost < 999 and not is-fire?]
 
   if any? choices [
     let target one-of choices
 
-    ;; If stepping into fire
     if [is-fire?] of target [
       set exposure-flag 1
       die
     ]
 
-    ;; Move randomly
     move-to target
     set path-index path-index + 1  ;; optional, useful if you still want to count steps
   ]
@@ -556,9 +549,7 @@ end
 
 
 
-;;;========================
-;;; ancillary reporter
-;;;========================
+;;; reporter
 
 to-report tanh [ x ]
   report (exp x - exp (- x)) / (exp x + exp (- x))
@@ -738,7 +729,7 @@ low-income-count
 low-income-count
 0
 20
-10.0
+0.0
 1
 1
 NIL
@@ -753,7 +744,7 @@ mid-income-count
 mid-income-count
 0
 100
-50.0
+0.0
 1
 1
 NIL
@@ -768,7 +759,7 @@ high-income-count
 high-income-count
 0
 100
-50.0
+0.0
 1
 1
 NIL
@@ -794,7 +785,7 @@ fire-speed-kmph
 fire-speed-kmph
 0
 5
-2.0
+5.0
 0.1
 1
 NIL
@@ -837,7 +828,7 @@ responder-count
 responder-count
 0
 20
-5.0
+0.0
 1
 1
 NIL
@@ -852,7 +843,7 @@ rescue-capacity
 rescue-capacity
 0
 10
-5.0
+0.0
 1
 1
 NIL
@@ -874,10 +865,10 @@ NIL
 HORIZONTAL
 
 MONITOR
-337
-594
-471
-639
+301
+597
+392
+642
  Calm Count
 count evacuees with [behavior = \"calm\"]
 17
@@ -885,10 +876,10 @@ count evacuees with [behavior = \"calm\"]
 11
 
 MONITOR
-338
-655
-473
-700
+413
+597
+498
+642
 Panic Count
 count evacuees with [behavior = \"panic\"]
 17
@@ -896,10 +887,10 @@ count evacuees with [behavior = \"panic\"]
 11
 
 MONITOR
-338
-714
-472
-759
+302
+655
+393
+700
 Anxious Count
 count evacuees with [behavior = \"anxious\"]
 17
@@ -925,6 +916,39 @@ PENS
 "calm" 1.0 0 -13345367 true "" "plot count evacuees with [behavior = \"calm\"]"
 "panic" 1.0 0 -16777216 true "" "plot count evacuees with [behavior = \"panic\"]"
 "anxious" 1.0 0 -2674135 true "" "plot count evacuees with [behavior = \"anxious\"]"
+
+MONITOR
+303
+713
+395
+758
+Seconds
+ticks
+17
+1
+11
+
+MONITOR
+414
+713
+500
+758
+Minutes
+ticks / 60
+17
+1
+11
+
+MONITOR
+520
+713
+607
+758
+Hours
+ticks / 3600
+17
+1
+11
 
 @#$#@#$#@
 ## WHAT IS IT?
