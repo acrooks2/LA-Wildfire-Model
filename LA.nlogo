@@ -950,6 +950,17 @@ ticks / 3600
 1
 11
 
+MONITOR
+413
+656
+529
+701
+Escaped evacuees
+escaped-count
+17
+1
+11
+
 @#$#@#$#@
 ## WHAT IS IT?
 
