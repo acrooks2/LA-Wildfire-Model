@@ -32,3 +32,9 @@ This project implements an agent-based wildfire evacuation simulation for Los An
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request. 
+
+## Citation
+Zhou, Z. and Crooks, A.T. (2025), Modeling Wildfire Evacuation with Embedded Fuzzy Cognitive Maps:An Agent-Based Simulation of Emotion and Social Contagion, Proceedings of the 2025 International Conference of the Computational Social Science Society of the Americas, Santa Fe, NM
+
+<img width="468" height="38" alt="image" src="https://github.com/user-attachments/assets/b46b434b-d965-4b1e-88b9-bcc251f42d3d" />
+
